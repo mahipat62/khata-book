@@ -40,11 +40,29 @@ async function handleReAuth() {
 
 async function clearCache() {
   try {
+    // Only clear session storage and sheets state, NOT auth data
     sessionStorage.clear()
     sheetsStore.clearState()
-    toastStore.success('Cache cleared successfully')
+    toastStore.success('Cache cleared successfully (login preserved)')
   } catch (error) {
     toastStore.error('Failed to clear cache')
+  }
+}
+
+// Full logout and clear all data
+async function clearAllData() {
+  if (!confirm('This will sign you out and clear all local data. Your Google Drive backup will NOT be affected. Continue?')) {
+    return
+  }
+  try {
+    sessionStorage.clear()
+    localStorage.clear()
+    sheetsStore.clearState()
+    authStore.signOut()
+    toastStore.success('All local data cleared')
+    window.location.reload()
+  } catch (error) {
+    toastStore.error('Failed to clear data')
   }
 }
 
@@ -202,7 +220,14 @@ async function importFromDriveSheet(sheetId) {
         <button @click="clearCache" class="btn-secondary">
           Clear Cache
         </button>
+        <button @click="clearAllData" class="btn-secondary text-red-600 hover:bg-red-50">
+          Clear All Data & Logout
+        </button>
       </div>
+      
+      <p class="mt-3 text-xs text-gray-500">
+        ✓ Your login is now persistent - you won't need to sign in every time!
+      </p>
     </div>
 
     <!-- Data Backup Section (Google Drive) -->

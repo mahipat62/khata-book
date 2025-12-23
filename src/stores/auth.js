@@ -2,10 +2,17 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { GOOGLE_CONFIG } from '@/config/google'
 
+const STORAGE_KEYS = {
+  ACCESS_TOKEN: 'dhanvika_access_token',
+  TOKEN_EXPIRY: 'dhanvika_token_expiry',
+  USER: 'dhanvika_user'
+}
+
 export const useAuthStore = defineStore('auth', () => {
   // State
   const user = ref(null)
   const accessToken = ref(null)
+  const tokenExpiry = ref(null)
   const isLoading = ref(false)
   const error = ref(null)
   const tokenClient = ref(null)
@@ -13,8 +20,15 @@ export const useAuthStore = defineStore('auth', () => {
   const gisInited = ref(false)
 
   // Computed
-  const isAuthenticated = computed(() => !!accessToken.value)
+  const isAuthenticated = computed(() => !!accessToken.value && !isTokenExpired())
   const isReady = computed(() => gapiInited.value && gisInited.value)
+
+  // Check if token is expired
+  function isTokenExpired() {
+    if (!tokenExpiry.value) return true
+    // Add 5 minute buffer before expiry
+    return Date.now() > (tokenExpiry.value - 5 * 60 * 1000)
+  }
 
   // Initialize Google API
   async function initGoogleApi() {
@@ -59,13 +73,26 @@ export const useAuthStore = defineStore('auth', () => {
 
   function checkReady(resolve) {
     if (gapiInited.value && gisInited.value) {
-      // Check for existing token in session storage
-      const storedToken = sessionStorage.getItem('khata_access_token')
-      const storedUser = sessionStorage.getItem('khata_user')
-      if (storedToken && storedUser) {
-        accessToken.value = storedToken
-        user.value = JSON.parse(storedUser)
-        gapi.client.setToken({ access_token: storedToken })
+      // Check for existing token in localStorage (persistent)
+      const storedToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN)
+      const storedExpiry = localStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRY)
+      const storedUser = localStorage.getItem(STORAGE_KEYS.USER)
+      
+      if (storedToken && storedUser && storedExpiry) {
+        const expiryTime = parseInt(storedExpiry, 10)
+        
+        // Check if token is still valid (with 5 min buffer)
+        if (Date.now() < expiryTime - 5 * 60 * 1000) {
+          accessToken.value = storedToken
+          tokenExpiry.value = expiryTime
+          user.value = JSON.parse(storedUser)
+          gapi.client.setToken({ access_token: storedToken })
+          console.log('[Auth] Restored session from storage')
+        } else {
+          // Token expired, try silent refresh
+          console.log('[Auth] Token expired, will try silent refresh')
+          silentRefresh()
+        }
       }
       resolve()
     }
@@ -79,8 +106,16 @@ export const useAuthStore = defineStore('auth', () => {
       return
     }
 
+    // Calculate token expiry (default 1 hour = 3600 seconds)
+    const expiresIn = response.expires_in || 3600
+    const expiryTime = Date.now() + (expiresIn * 1000)
+
     accessToken.value = response.access_token
-    sessionStorage.setItem('khata_access_token', response.access_token)
+    tokenExpiry.value = expiryTime
+    
+    // Store in localStorage for persistence across browser sessions
+    localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token)
+    localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRY, expiryTime.toString())
     
     // Set token for gapi client
     gapi.client.setToken({ access_token: response.access_token })
@@ -92,26 +127,54 @@ export const useAuthStore = defineStore('auth', () => {
       })
       const userInfo = await userInfoResponse.json()
       user.value = userInfo
-      sessionStorage.setItem('khata_user', JSON.stringify(userInfo))
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(userInfo))
     } catch (err) {
       console.error('Failed to fetch user info:', err)
     }
 
     isLoading.value = false
+    
+    // Set up auto-refresh before token expires
+    scheduleTokenRefresh(expiresIn)
   }
 
-  // Sign in
+  // Schedule automatic token refresh
+  function scheduleTokenRefresh(expiresIn) {
+    // Refresh 5 minutes before expiry
+    const refreshTime = (expiresIn - 300) * 1000
+    if (refreshTime > 0) {
+      setTimeout(() => {
+        console.log('[Auth] Auto-refreshing token...')
+        silentRefresh()
+      }, refreshTime)
+    }
+  }
+
+  // Silent refresh - try to get new token without user interaction
+  function silentRefresh() {
+    if (tokenClient.value) {
+      try {
+        // Use empty prompt for silent refresh (no popup if already authorized)
+        tokenClient.value.requestAccessToken({ prompt: '' })
+      } catch (err) {
+        console.error('[Auth] Silent refresh failed:', err)
+      }
+    }
+  }
+
+  // Sign in - only show consent on first time
   function signIn() {
     isLoading.value = true
     error.value = null
 
     if (tokenClient.value) {
-      // Request access token
-      if (accessToken.value) {
-        // Token exists, request with prompt
+      const storedUser = localStorage.getItem(STORAGE_KEYS.USER)
+      
+      if (storedUser) {
+        // User has signed in before, try silent sign in first
         tokenClient.value.requestAccessToken({ prompt: '' })
       } else {
-        // No token, show consent screen
+        // First time user, show consent screen
         tokenClient.value.requestAccessToken({ prompt: 'consent' })
       }
     }
@@ -126,9 +189,13 @@ export const useAuthStore = defineStore('auth', () => {
     }
     
     accessToken.value = null
+    tokenExpiry.value = null
     user.value = null
-    sessionStorage.removeItem('khata_access_token')
-    sessionStorage.removeItem('khata_user')
+    
+    // Clear localStorage
+    localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN)
+    localStorage.removeItem(STORAGE_KEYS.TOKEN_EXPIRY)
+    localStorage.removeItem(STORAGE_KEYS.USER)
     
     if (gapi.client) {
       gapi.client.setToken(null)
@@ -138,16 +205,22 @@ export const useAuthStore = defineStore('auth', () => {
   // Check if token is valid
   async function validateToken() {
     if (!accessToken.value) return false
+    if (isTokenExpired()) {
+      // Try silent refresh
+      silentRefresh()
+      return false
+    }
 
     try {
       const response = await fetch(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${accessToken.value}`)
       if (!response.ok) {
-        signOut()
+        // Token invalid, try silent refresh
+        silentRefresh()
         return false
       }
       return true
     } catch {
-      signOut()
+      silentRefresh()
       return false
     }
   }

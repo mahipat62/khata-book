@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e40af"/>
+      <stop offset="100%" style="stop-color:#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="102" fill="url(#bgGradient)"/>
+  <!-- Stylized D letter with business elements -->
+  <path d="M128 102h102c84.8 0 154 69.2 154 154s-69.2 154-154 154H128V102z" stroke="#ffffff" stroke-width="20" fill="none"/>
+  <path d="M154 128h77c70.7 0 128 57.3 128 128s-57.3 128-128 128H154V128z" fill="#ffffff" opacity="0.2"/>
+  <!-- Rupee symbol inside -->
+  <path d="M195 179h102M195 230h102M246 179c20.5 0 36 15.5 36 36s-15.5 36-36 36H195l77 108" stroke="#ffffff" stroke-width="15" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

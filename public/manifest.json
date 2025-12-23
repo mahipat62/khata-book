@@ -1,0 +1,42 @@
+{
+  "name": "Dhanvika Vyavasāya",
+  "short_name": "Dhanvika",
+  "description": "Smart Business Management - व्यवसाय प्रबंधन",
+  "start_url": "/khata-book/",
+  "scope": "/khata-book/",
+  "display": "standalone",
+  "background_color": "#1e40af",
+  "theme_color": "#1e40af",
+  "orientation": "portrait-primary",
+  "categories": ["business", "finance", "productivity"],
+  "lang": "en",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/khata-book/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/khata-book/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "View your dashboard",
+      "url": "/khata-book/dashboard"
+    },
+    {
+      "name": "My Sheets",
+      "short_name": "Sheets",
+      "description": "View all your sheets",
+      "url": "/khata-book/sheets"
+    }
+  ]
+}
