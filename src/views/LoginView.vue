@@ -32,20 +32,21 @@ async function handleSignIn() {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-600 to-primary-800 p-4">
+  <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-purple-800 to-purple-900 p-4">
     <div class="w-full max-w-md">
       <!-- Logo Card -->
       <div class="bg-white rounded-2xl shadow-2xl p-8 text-center">
         <!-- Logo -->
-        <div class="w-20 h-20 bg-primary-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-          <svg class="w-12 h-12 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+        <div class="w-20 h-20 bg-gradient-to-br from-blue-800 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+          <svg class="w-12 h-12 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </div>
 
         <!-- Title -->
-        <h1 class="text-3xl font-bold text-gray-800 mb-2">{{ APP_CONFIG.APP_NAME }}</h1>
-        <p class="text-gray-500 mb-8">Manage your personal & business accounts with ease</p>
+        <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-800 to-purple-600 bg-clip-text text-transparent mb-1">{{ APP_CONFIG.APP_NAME }}</h1>
+        <p class="text-lg text-gray-600 mb-1">{{ APP_CONFIG.APP_NAME_HINDI }}</p>
+        <p class="text-gray-500 mb-8">{{ APP_CONFIG.TAGLINE }}</p>
 
         <!-- Features List -->
         <div class="text-left space-y-3 mb-8">
@@ -105,11 +106,17 @@ async function handleSignIn() {
         <p v-if="!authStore.isReady" class="mt-4 text-sm text-gray-500">
           Loading Google API...
         </p>
+        
+        <!-- Copyright -->
+        <p class="mt-6 text-xs text-gray-400">{{ APP_CONFIG.COPYRIGHT }}</p>
       </div>
 
       <!-- Footer -->
       <p class="text-center text-white/70 text-sm mt-6">
         Your data is stored securely in your own Google Drive
+      </p>
+      <p class="text-center text-white/50 text-xs mt-2">
+        Powered by {{ APP_CONFIG.DEVELOPER }}
       </p>
     </div>
   </div>

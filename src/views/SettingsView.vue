@@ -1,15 +1,33 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSheetsStore } from '@/stores/sheets'
 import { useToastStore } from '@/stores/toast'
+import { useBackupStore } from '@/stores/backup'
 import { APP_CONFIG, GOOGLE_CONFIG } from '@/config/google'
 
 const authStore = useAuthStore()
 const sheetsStore = useSheetsStore()
 const toastStore = useToastStore()
+const backupStore = useBackupStore()
 
 const showApiInfo = ref(false)
+const showImportModal = ref(false)
+const showDriveImportModal = ref(false)
+const driveSheets = ref([])
+const importFileInput = ref(null)
+const isBackingUp = ref(false)
+const isRestoring = ref(false)
+const backupStatus = ref(null)
+
+onMounted(async () => {
+  // Check backup status on mount
+  try {
+    backupStatus.value = await backupStore.checkBackupStatus()
+  } catch (error) {
+    console.error('Failed to check backup status:', error)
+  }
+})
 
 async function handleReAuth() {
   try {
@@ -27,6 +45,128 @@ async function clearCache() {
     toastStore.success('Cache cleared successfully')
   } catch (error) {
     toastStore.error('Failed to clear cache')
+  }
+}
+
+// Backup to Google Drive
+async function backupToGoogleDrive() {
+  isBackingUp.value = true
+  try {
+    const data = {
+      sheets: sheetsStore.sheets,
+      currentSheet: sheetsStore.currentSheet,
+      user: authStore.user
+    }
+    await backupStore.saveToGoogleDrive(data)
+    backupStatus.value = await backupStore.checkBackupStatus()
+    toastStore.success('Backup saved to Google Drive successfully!')
+  } catch (error) {
+    toastStore.error('Failed to backup to Google Drive: ' + error.message)
+  } finally {
+    isBackingUp.value = false
+  }
+}
+
+// Restore from Google Drive
+async function restoreFromGoogleDrive() {
+  isRestoring.value = true
+  try {
+    const backup = await backupStore.loadFromGoogleDrive()
+    if (backup && backup.data) {
+      // Restore sheets data
+      if (backup.data.sheets) {
+        sheetsStore.sheets = backup.data.sheets
+      }
+      toastStore.success('Data restored from Google Drive successfully!')
+    } else {
+      toastStore.info('No backup found in Google Drive')
+    }
+  } catch (error) {
+    toastStore.error('Failed to restore from Google Drive: ' + error.message)
+  } finally {
+    isRestoring.value = false
+  }
+}
+
+// Export database to JSON
+function exportDatabase() {
+  try {
+    const data = {
+      sheets: sheetsStore.sheets,
+      currentSheet: sheetsStore.currentSheet,
+      currentData: sheetsStore.currentData
+    }
+    const filename = `dhanvika_backup_${new Date().toISOString().split('T')[0]}.json`
+    backupStore.exportToJsonFile(data, filename)
+    toastStore.success('Database exported successfully!')
+  } catch (error) {
+    toastStore.error('Failed to export database')
+  }
+}
+
+// Import database from JSON
+function triggerImport() {
+  importFileInput.value?.click()
+}
+
+async function handleFileImport(event) {
+  const file = event.target.files[0]
+  if (!file) return
+
+  try {
+    const importedData = await backupStore.importFromJsonFile(file)
+    if (importedData && importedData.data) {
+      // Restore data
+      if (importedData.data.sheets) {
+        sheetsStore.sheets = importedData.data.sheets
+      }
+      if (importedData.data.currentSheet) {
+        sheetsStore.currentSheet = importedData.data.currentSheet
+      }
+      if (importedData.data.currentData) {
+        sheetsStore.currentData = importedData.data.currentData
+      }
+      toastStore.success('Database imported successfully!')
+    } else {
+      toastStore.error('Invalid backup file format')
+    }
+  } catch (error) {
+    toastStore.error('Failed to import: ' + error.message)
+  }
+  
+  // Reset file input
+  event.target.value = ''
+}
+
+// Import sheet from Google Drive
+async function openDriveImport() {
+  showDriveImportModal.value = true
+  try {
+    driveSheets.value = await backupStore.listDriveSpreadsheets()
+  } catch (error) {
+    toastStore.error('Failed to list Google Drive sheets')
+  }
+}
+
+async function importFromDriveSheet(sheetId) {
+  try {
+    const sheetData = await backupStore.importSheetFromDrive(sheetId)
+    if (sheetData) {
+      // Add to sheets list if not already there
+      const existing = sheetsStore.sheets.find(s => s.id === sheetId)
+      if (!existing) {
+        sheetsStore.sheets.push({
+          id: sheetData.id,
+          name: sheetData.name,
+          webViewLink: sheetData.url,
+          modifiedTime: new Date().toISOString()
+        })
+      }
+      toastStore.success(`Sheet "${sheetData.name}" imported successfully!`)
+      showDriveImportModal.value = false
+    }
+  } catch (error) {
+    toastStore.error('Failed to import sheet: ' + error.message)
   }
 }
 </script>
@@ -61,6 +201,107 @@ async function clearCache() {
         </button>
         <button @click="clearCache" class="btn-secondary">
           Clear Cache
+        </button>
+      </div>
+    </div>
+
+    <!-- Data Backup Section (Google Drive) -->
+    <div class="card mb-6">
+      <h2 class="card-header">☁️ Cloud Backup (Google Drive)</h2>
+      
+      <p class="text-sm text-gray-600 mb-4">
+        Save your app data to Google Drive so you never lose it, even if you clear cache or switch devices.
+      </p>
+
+      <div v-if="backupStatus?.exists" class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+        <div class="flex items-center space-x-2">
+          <svg class="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span class="text-sm text-green-800">
+            Last backup: {{ new Date(backupStatus.lastModified).toLocaleString() }}
+          </span>
+        </div>
+      </div>
+
+      <div v-else class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+        <div class="flex items-center space-x-2">
+          <svg class="w-5 h-5 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <span class="text-sm text-yellow-800">No backup found. Create one now!</span>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap gap-3">
+        <button 
+          @click="backupToGoogleDrive" 
+          :disabled="isBackingUp"
+          class="btn-primary flex items-center space-x-2"
+        >
+          <svg v-if="isBackingUp" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          </svg>
+          <span>{{ isBackingUp ? 'Backing up...' : 'Backup to Drive' }}</span>
+        </button>
+        
+        <button 
+          @click="restoreFromGoogleDrive" 
+          :disabled="isRestoring || !backupStatus?.exists"
+          class="btn-secondary flex items-center space-x-2"
+        >
+          <svg v-if="isRestoring" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+          </svg>
+          <span>{{ isRestoring ? 'Restoring...' : 'Restore from Drive' }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Import/Export Section -->
+    <div class="card mb-6">
+      <h2 class="card-header">📁 Import & Export</h2>
+      
+      <p class="text-sm text-gray-600 mb-4">
+        Export your data as JSON file for backup, or import data from a file or Google Drive sheet.
+      </p>
+
+      <input 
+        ref="importFileInput" 
+        type="file" 
+        accept=".json"
+        @change="handleFileImport"
+        class="hidden"
+      />
+
+      <div class="grid sm:grid-cols-3 gap-3">
+        <button @click="exportDatabase" class="btn-secondary flex items-center justify-center space-x-2">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          <span>Export JSON</span>
+        </button>
+        
+        <button @click="triggerImport" class="btn-secondary flex items-center justify-center space-x-2">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          <span>Import JSON</span>
+        </button>
+
+        <button @click="openDriveImport" class="btn-secondary flex items-center justify-center space-x-2">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <span>Import from Drive</span>
         </button>
       </div>
     </div>
@@ -177,6 +418,70 @@ async function clearCache() {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
           </svg>
         </a>
+      </div>
+    </div>
+
+    <!-- Copyright Footer -->
+    <div class="text-center text-sm text-gray-500 mt-8 pb-8">
+      <p>{{ APP_CONFIG.COPYRIGHT }}</p>
+      <p class="text-xs mt-1">Developed by {{ APP_CONFIG.DEVELOPER }}</p>
+    </div>
+
+    <!-- Drive Import Modal -->
+    <div v-if="showDriveImportModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+        <div class="flex items-center justify-between p-4 border-b">
+          <h3 class="text-lg font-semibold text-gray-800">Import Sheet from Google Drive</h3>
+          <button @click="showDriveImportModal = false" class="p-2 hover:bg-gray-100 rounded-lg">
+            <svg class="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        
+        <div class="flex-1 overflow-y-auto p-4">
+          <div v-if="backupStore.isLoading" class="flex items-center justify-center py-12">
+            <svg class="w-8 h-8 animate-spin text-primary-600" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span class="ml-2 text-gray-600">Loading sheets...</span>
+          </div>
+
+          <div v-else-if="driveSheets.length === 0" class="text-center py-12 text-gray-500">
+            <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <p>No spreadsheets found in your Google Drive</p>
+          </div>
+
+          <div v-else class="space-y-2">
+            <div 
+              v-for="sheet in driveSheets" 
+              :key="sheet.id"
+              class="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <div class="flex items-center space-x-3 flex-1 min-w-0">
+                <svg class="w-8 h-8 text-green-600 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
+                  <path d="M7 7h2v2H7zm0 4h2v2H7zm0 4h2v2H7zm4-8h6v2h-6zm0 4h6v2h-6zm0 4h6v2h-6z"/>
+                </svg>
+                <div class="min-w-0 flex-1">
+                  <p class="font-medium text-gray-800 truncate">{{ sheet.name }}</p>
+                  <p class="text-xs text-gray-500">
+                    Modified: {{ new Date(sheet.modifiedTime).toLocaleDateString() }}
+                  </p>
+                </div>
+              </div>
+              <button 
+                @click="importFromDriveSheet(sheet.id)"
+                class="btn-primary text-sm px-3 py-1.5 flex-shrink-0"
+              >
+                Import
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

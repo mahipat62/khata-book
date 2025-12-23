@@ -66,7 +66,7 @@ function formatDate(dateStr) {
     <!-- Header -->
     <div class="mb-8">
       <h1 class="text-2xl font-bold text-gray-800">Dashboard</h1>
-      <p class="text-gray-500">Welcome to your Khata Book</p>
+      <p class="text-gray-500">Welcome to {{ APP_CONFIG.APP_NAME }}</p>
     </div>
 
     <!-- Loading State -->

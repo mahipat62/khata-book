@@ -12,6 +12,7 @@ export const GOOGLE_CONFIG = {
   SCOPES: [
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/drive.appdata',
     'https://www.googleapis.com/auth/userinfo.profile',
     'https://www.googleapis.com/auth/userinfo.email'
   ].join(' '),
@@ -23,7 +24,10 @@ export const GOOGLE_CONFIG = {
   ],
   
   // App metadata folder name in Google Drive
-  APP_FOLDER_NAME: 'Khata Book Data'
+  APP_FOLDER_NAME: 'Dhanvika Vyavasaya Data',
+  
+  // Backup file name in Google Drive
+  BACKUP_FILE_NAME: 'dhanvika_backup.json'
 }
 
 // Default Khata sheet columns
@@ -39,9 +43,13 @@ export const DEFAULT_COLUMNS = [
 
 // App settings
 export const APP_CONFIG = {
-  APP_NAME: 'Khata Book',
-  VERSION: '1.0.0',
+  APP_NAME: 'Dhanvika Vyavasāya',
+  APP_NAME_HINDI: 'धनविका व्यवसाय',
+  TAGLINE: 'Smart Business Management',
+  VERSION: '2.0.0',
   ITEMS_PER_PAGE: 25,
   DATE_FORMAT: 'YYYY-MM-DD',
-  CURRENCY: '₹'
+  CURRENCY: '₹',
+  COPYRIGHT: '© 2024-2025 Dhanvika Technologies',
+  DEVELOPER: 'Dhanvika Technologies'
 }
