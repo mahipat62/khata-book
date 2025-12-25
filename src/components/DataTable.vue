@@ -111,7 +111,10 @@ function getBooleanClass(value) {
           v-else
           v-for="(row, index) in data"
           :key="row._rowIndex || index"
-          class="hover:bg-gray-50 transition-colors"
+          :class="[
+            'transition-colors',
+            index % 2 === 0 ? 'bg-white hover:bg-blue-50' : 'bg-gray-50 hover:bg-blue-50'
+          ]"
         >
           <td
             v-for="column in columns"

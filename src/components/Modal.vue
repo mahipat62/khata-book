@@ -44,7 +44,7 @@ const sizeClass = computed(() => {
     <Transition name="modal">
       <div
         v-if="isVisible"
-        class="fixed inset-0 z-50 flex items-center justify-center p-4"
+        class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
       >
         <!-- Backdrop -->
         <div
@@ -55,16 +55,16 @@ const sizeClass = computed(() => {
         <!-- Modal Content -->
         <div
           :class="[
-            'relative bg-white rounded-xl shadow-2xl w-full transform transition-all',
+            'modal-content relative bg-white rounded-t-2xl sm:rounded-xl shadow-2xl w-full transform transition-all max-h-[90vh] sm:max-h-[85vh] overflow-hidden',
             sizeClass
           ]"
         >
           <!-- Header -->
-          <div class="flex items-center justify-between px-6 py-4 border-b">
+          <div class="flex items-center justify-between px-4 sm:px-6 py-4 border-b sticky top-0 bg-white z-10">
             <h3 class="text-lg font-semibold text-gray-800">{{ title }}</h3>
             <button
               @click="close"
-              class="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+              class="p-2 hover:bg-gray-100 rounded-lg transition-colors -mr-2"
             >
               <svg class="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -73,12 +73,12 @@ const sizeClass = computed(() => {
           </div>
 
           <!-- Body -->
-          <div class="px-6 py-4 max-h-[70vh] overflow-y-auto">
+          <div class="px-4 sm:px-6 py-4 overflow-y-auto scroll-smooth" style="max-height: calc(90vh - 130px);">
             <slot></slot>
           </div>
 
           <!-- Footer -->
-          <div v-if="$slots.footer" class="px-6 py-4 border-t bg-gray-50 rounded-b-xl">
+          <div v-if="$slots.footer" class="px-4 sm:px-6 py-4 border-t bg-gray-50 rounded-b-xl safe-bottom">
             <slot name="footer"></slot>
           </div>
         </div>

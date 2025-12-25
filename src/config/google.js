@@ -41,12 +41,64 @@ export const DEFAULT_COLUMNS = [
   { name: 'Notes', type: 'text', required: false }
 ]
 
+// Sheet Template Presets
+export const SHEET_TEMPLATES = {
+  default: {
+    name: 'Standard Khata',
+    description: 'Full featured with all columns',
+    columns: [
+      { name: 'Date', type: 'date', required: true },
+      { name: 'Person Name', type: 'text', required: true },
+      { name: 'Description', type: 'text', required: false },
+      { name: 'Amount', type: 'number', required: true },
+      { name: 'Type', type: 'select', options: ['Credit', 'Debit'], required: true },
+      { name: 'Paid', type: 'boolean', required: true },
+      { name: 'Notes', type: 'text', required: false }
+    ]
+  },
+  creditOnly: {
+    name: 'Credit Only (Earnings)',
+    description: 'Track only income and receivables',
+    columns: [
+      { name: 'Date', type: 'date', required: true },
+      { name: 'Person Name', type: 'text', required: true },
+      { name: 'Description', type: 'text', required: false },
+      { name: 'Amount', type: 'number', required: true },
+      { name: 'Received', type: 'boolean', required: true },
+      { name: 'Notes', type: 'text', required: false }
+    ]
+  },
+  debitOnly: {
+    name: 'Debit Only (Expenses)',
+    description: 'Track only expenses and payables',
+    columns: [
+      { name: 'Date', type: 'date', required: true },
+      { name: 'Vendor/Person', type: 'text', required: true },
+      { name: 'Description', type: 'text', required: false },
+      { name: 'Amount', type: 'number', required: true },
+      { name: 'Paid', type: 'boolean', required: true },
+      { name: 'Category', type: 'select', options: ['Bills', 'Salary', 'Rent', 'Supplies', 'Other'], required: false },
+      { name: 'Notes', type: 'text', required: false }
+    ]
+  },
+  simple: {
+    name: 'Simple Ledger',
+    description: 'Basic credit/debit tracking',
+    columns: [
+      { name: 'Date', type: 'date', required: true },
+      { name: 'Description', type: 'text', required: true },
+      { name: 'Amount', type: 'number', required: true },
+      { name: 'Type', type: 'select', options: ['Credit', 'Debit'], required: true }
+    ]
+  }
+}
+
 // App settings
 export const APP_CONFIG = {
   APP_NAME: 'Dhanvika Vyavasāya',
   APP_NAME_HINDI: 'धनविका व्यवसाय',
   TAGLINE: 'Smart Business Management',
-  VERSION: '2.0.0',
+  VERSION: '2.1.0',
   ITEMS_PER_PAGE: 25,
   DATE_FORMAT: 'YYYY-MM-DD',
   CURRENCY: '₹',

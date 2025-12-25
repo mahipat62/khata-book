@@ -27,7 +27,8 @@ onMounted(async () => {
     <template v-else>
       <NavBar v-if="authStore.isAuthenticated" />
       
-      <main :class="{ 'pt-16': authStore.isAuthenticated }">
+      <!-- pt-16 for header, pb-20 for mobile bottom nav on small screens -->
+      <main :class="authStore.isAuthenticated ? 'pt-16 pb-20 md:pb-4' : ''">
         <RouterView />
       </main>
       

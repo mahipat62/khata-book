@@ -121,3 +121,53 @@ body {
 .toast-leave {
   animation: slideOut 0.3s ease-in;
 }
+
+/* Mobile-specific improvements */
+@media (max-width: 640px) {
+  /* Larger touch targets */
+  .btn, .btn-primary, .btn-secondary, .btn-success, .btn-danger, .btn-outline {
+    @apply py-3 px-4 min-h-11 text-base;
+  }
+  
+  /* Larger inputs for better touch */
+  .input {
+    @apply py-3 px-4 text-base;
+  }
+  
+  /* Better card spacing on mobile */
+  .card {
+    @apply p-4 rounded-lg;
+  }
+  
+  /* Improved table cells for mobile */
+  table td, table th {
+    @apply px-2 py-3;
+  }
+  
+  /* Ensure proper spacing in modals */
+  .modal-content {
+    @apply m-3;
+  }
+}
+
+/* Safe area padding for notched devices */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+/* Improved scrolling on touch devices */
+.scroll-smooth {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Better focus states for accessibility */
+*:focus-visible {
+  @apply outline-none ring-2 ring-primary-500 ring-offset-2;
+}

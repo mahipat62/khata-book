@@ -15,6 +15,7 @@ const syncStatus = computed(() => sheetsStore.syncStatus)
 const navItems = [
   { name: 'Dashboard', path: '/dashboard', icon: 'chart' },
   { name: 'My Sheets', path: '/sheets', icon: 'folder' },
+  { name: 'Analytics', path: '/analytics', icon: 'analytics' },
   { name: 'Settings', path: '/settings', icon: 'cog' }
 ]
 
@@ -52,10 +53,19 @@ const syncStatusText = computed(() => {
     <div class="max-w-7xl mx-auto px-4">
       <div class="flex items-center justify-between h-16">
         <!-- Logo -->
-        <div class="flex items-center space-x-3">
-          <div class="w-10 h-10 bg-gradient-to-br from-blue-800 to-purple-600 rounded-lg flex items-center justify-center">
-            <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        <div class="flex items-center space-x-2 sm:space-x-3">
+          <div class="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-800 to-purple-600 rounded-lg flex items-center justify-center overflow-hidden">
+            <svg class="w-full h-full" viewBox="0 0 100 100">
+              <defs>
+                <linearGradient id="navBgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#1e40af"/>
+                  <stop offset="100%" style="stop-color:#7c3aed"/>
+                </linearGradient>
+              </defs>
+              <rect width="100" height="100" rx="20" fill="url(#navBgGradient)"/>
+              <path d="M25 20h20c16.569 0 30 13.431 30 30s-13.431 30-30 30H25V20z" stroke="#ffffff" stroke-width="4" fill="none"/>
+              <path d="M30 25h15c13.807 0 25 11.193 25 25s-11.193 25-25 25H30V25z" fill="#ffffff" opacity="0.2"/>
+              <path d="M38 35h20M38 45h20M48 35c4 0 7 3 7 7s-3 7-7 7H38l15 21" stroke="#ffffff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </div>
           <div class="hidden sm:block">
@@ -127,20 +137,38 @@ const syncStatusText = computed(() => {
     </div>
 
     <!-- Mobile Navigation -->
-    <div class="md:hidden border-t">
-      <div class="flex justify-around py-2">
+    <div class="md:hidden border-t bg-white safe-bottom">
+      <div class="flex justify-around py-1">
         <router-link
           v-for="item in navItems"
           :key="item.path"
           :to="item.path"
           :class="[
-            'flex flex-col items-center px-3 py-1 text-xs',
+            'flex flex-col items-center px-4 py-2 text-xs min-w-16 min-h-14',
             isActive(item.path)
               ? 'text-primary-600'
               : 'text-gray-500'
           ]"
         >
-          {{ item.name }}
+          <!-- Dashboard Icon -->
+          <svg v-if="item.icon === 'chart'" class="w-5 h-5 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+          <!-- Folder Icon -->
+          <svg v-else-if="item.icon === 'folder'" class="w-5 h-5 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+          </svg>
+          <!-- Analytics Icon -->
+          <svg v-else-if="item.icon === 'analytics'" class="w-5 h-5 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+          </svg>
+          <!-- Settings Icon -->
+          <svg v-else-if="item.icon === 'cog'" class="w-5 h-5 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <span>{{ item.name }}</span>
         </router-link>
       </div>
     </div>

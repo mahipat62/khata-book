@@ -346,6 +346,28 @@ export const useSheetsStore = defineStore('sheets', () => {
     }
   }
 
+  // Rename sheet
+  async function renameSheet(spreadsheetId, newName) {
+    isLoading.value = true
+
+    try {
+      await gapi.client.drive.files.update({
+        fileId: spreadsheetId,
+        resource: {
+          name: newName
+        }
+      })
+
+      await fetchSheets()
+    } catch (err) {
+      error.value = err.message || 'Failed to rename sheet'
+      console.error('Rename sheet error:', err)
+      throw err
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   // Duplicate sheet (backup)
   async function duplicateSheet(spreadsheetId, newName) {
     isLoading.value = true
@@ -396,6 +418,7 @@ export const useSheetsStore = defineStore('sheets', () => {
     updateRecord,
     deleteRecord,
     deleteSheet,
+    renameSheet,
     duplicateSheet,
     getColumnConfig,
     clearState

@@ -1,9 +1,9 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSheetsStore } from '@/stores/sheets'
 import { useToastStore } from '@/stores/toast'
-import { DEFAULT_COLUMNS } from '@/config/google'
+import { DEFAULT_COLUMNS, SHEET_TEMPLATES } from '@/config/google'
 import Modal from '@/components/Modal.vue'
 import ColumnBuilder from '@/components/ColumnBuilder.vue'
 
@@ -19,7 +19,15 @@ const newSheetName = ref('')
 const isCreating = ref(false)
 const isDeleting = ref(false)
 const useCustomColumns = ref(false)
+const selectedTemplate = ref('default')
 const customColumns = ref([...DEFAULT_COLUMNS])
+
+// Watch template selection to update columns preview
+watch(selectedTemplate, (template) => {
+  if (!useCustomColumns.value && SHEET_TEMPLATES[template]) {
+    customColumns.value = [...SHEET_TEMPLATES[template].columns]
+  }
+})
 
 onMounted(async () => {
   await loadSheets()
@@ -42,7 +50,12 @@ async function createSheet() {
     return
   }
 
-  const columnsToUse = useCustomColumns.value ? customColumns.value : DEFAULT_COLUMNS
+  let columnsToUse
+  if (useCustomColumns.value) {
+    columnsToUse = customColumns.value
+  } else {
+    columnsToUse = SHEET_TEMPLATES[selectedTemplate.value]?.columns || DEFAULT_COLUMNS
+  }
   
   if (columnsToUse.length === 0) {
     toastStore.warning('Please add at least one column')
@@ -56,6 +69,7 @@ async function createSheet() {
     showCreateModal.value = false
     newSheetName.value = ''
     useCustomColumns.value = false
+    selectedTemplate.value = 'default'
     customColumns.value = [...DEFAULT_COLUMNS]
     router.push(`/sheet/${sheetId}`)
   } catch (error) {
@@ -68,6 +82,7 @@ async function createSheet() {
 function openCreateModal() {
   newSheetName.value = ''
   useCustomColumns.value = false
+  selectedTemplate.value = 'default'
   customColumns.value = [...DEFAULT_COLUMNS]
   showCreateModal.value = true
 }
@@ -104,6 +119,53 @@ async function duplicateSheet(sheet) {
     toastStore.success('Backup created successfully!')
   } catch (error) {
     toastStore.error('Failed to create backup')
+  }
+}
+
+// Duplicate sheet with same structure (empty data)
+async function duplicateSheetStructure(sheet) {
+  try {
+    // First load the sheet to get its column structure
+    await sheetsStore.loadSheet(sheet.id)
+    const columns = sheetsStore.currentSheet?.columns || DEFAULT_COLUMNS
+    
+    // Create new sheet with same columns
+    const newName = sheet.name.replace('Khata - ', '') + ' (Copy)'
+    const newSheetId = await sheetsStore.createSheet(newName, columns)
+    
+    toastStore.success('Sheet structure duplicated successfully!')
+    router.push(`/sheet/${newSheetId}`)
+  } catch (error) {
+    toastStore.error('Failed to duplicate sheet structure')
+  }
+}
+
+// Rename sheet
+const showRenameModal = ref(false)
+const sheetToRename = ref(null)
+const newName = ref('')
+const isRenaming = ref(false)
+
+function openRenameModal(sheet) {
+  sheetToRename.value = sheet
+  newName.value = sheet.name.replace('Khata - ', '')
+  showRenameModal.value = true
+}
+
+async function renameSheet() {
+  if (!newName.value.trim() || !sheetToRename.value) return
+  
+  isRenaming.value = true
+  try {
+    await sheetsStore.renameSheet(sheetToRename.value.id, `Khata - ${newName.value.trim()}`)
+    toastStore.success('Sheet renamed successfully!')
+    showRenameModal.value = false
+    sheetToRename.value = null
+    newName.value = ''
+  } catch (error) {
+    toastStore.error('Failed to rename sheet')
+  } finally {
+    isRenaming.value = false
   }
 }
 
@@ -195,6 +257,15 @@ function formatDate(dateStr) {
           
           <div class="flex items-center space-x-1">
             <button
+              @click="openRenameModal(sheet)"
+              class="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+              title="Rename Sheet"
+            >
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
+            <button
               @click="openInGoogleSheets(sheet.webViewLink)"
               class="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
               title="Open in Google Sheets"
@@ -205,9 +276,18 @@ function formatDate(dateStr) {
               </svg>
             </button>
             <button
+              @click="duplicateSheetStructure(sheet)"
+              class="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+              title="Duplicate Structure (Empty)"
+            >
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+              </svg>
+            </button>
+            <button
               @click="duplicateSheet(sheet)"
               class="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-              title="Create Backup"
+              title="Create Backup (with data)"
             >
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -241,7 +321,7 @@ function formatDate(dateStr) {
         </div>
         
         <!-- Column Type Toggle -->
-        <div class="flex items-center space-x-4">
+        <div class="flex items-center space-x-4 flex-wrap gap-2">
           <label class="flex items-center space-x-2 cursor-pointer">
             <input
               type="radio"
@@ -249,7 +329,7 @@ function formatDate(dateStr) {
               v-model="useCustomColumns"
               class="w-4 h-4 text-primary-600"
             />
-            <span class="text-sm text-gray-700">Use Default Columns</span>
+            <span class="text-sm text-gray-700">Use Template</span>
           </label>
           <label class="flex items-center space-x-2 cursor-pointer">
             <input
@@ -262,17 +342,49 @@ function formatDate(dateStr) {
           </label>
         </div>
 
-        <!-- Default Columns Preview -->
-        <div v-if="!useCustomColumns" class="bg-gray-50 rounded-lg p-4">
-          <h4 class="text-sm font-medium text-gray-700 mb-2">Default Columns:</h4>
-          <div class="flex flex-wrap gap-2">
-            <span
-              v-for="col in DEFAULT_COLUMNS"
-              :key="col.name"
-              class="px-2 py-1 bg-white rounded text-xs text-gray-600 border"
+        <!-- Template Selection -->
+        <div v-if="!useCustomColumns" class="space-y-3">
+          <h4 class="text-sm font-medium text-gray-700">Choose Template:</h4>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label 
+              v-for="(template, key) in SHEET_TEMPLATES" 
+              :key="key"
+              class="relative flex cursor-pointer rounded-lg border bg-white p-4 shadow-sm focus:outline-none transition-all"
+              :class="selectedTemplate === key ? 'border-primary-500 ring-2 ring-primary-500' : 'border-gray-200 hover:border-gray-300'"
             >
-              {{ col.name }} ({{ col.type }})
-            </span>
+              <input 
+                type="radio" 
+                :value="key" 
+                v-model="selectedTemplate" 
+                class="sr-only"
+              />
+              <div class="flex flex-col">
+                <span class="block text-sm font-medium text-gray-900">{{ template.name }}</span>
+                <span class="mt-1 text-xs text-gray-500">{{ template.description }}</span>
+              </div>
+              <svg 
+                v-if="selectedTemplate === key" 
+                class="h-5 w-5 text-primary-600 absolute top-2 right-2" 
+                fill="currentColor" 
+                viewBox="0 0 20 20"
+              >
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+              </svg>
+            </label>
+          </div>
+          
+          <!-- Template Columns Preview -->
+          <div class="bg-gray-50 rounded-lg p-4 mt-3">
+            <h4 class="text-sm font-medium text-gray-700 mb-2">Columns in this template:</h4>
+            <div class="flex flex-wrap gap-2">
+              <span
+                v-for="col in SHEET_TEMPLATES[selectedTemplate]?.columns"
+                :key="col.name"
+                class="px-2 py-1 bg-white rounded text-xs text-gray-600 border"
+              >
+                {{ col.name }} ({{ col.type }})
+              </span>
+            </div>
           </div>
         </div>
 
@@ -317,6 +429,37 @@ function formatDate(dateStr) {
           <button @click="deleteSheet" class="btn-danger" :disabled="isDeleting">
             <span v-if="isDeleting">Deleting...</span>
             <span v-else>Delete</span>
+          </button>
+        </div>
+      </template>
+    </Modal>
+
+    <!-- Rename Modal -->
+    <Modal v-model="showRenameModal" title="Rename Khata" size="sm">
+      <div class="py-4">
+        <div class="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg class="w-8 h-8 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        </div>
+        <label class="block text-sm font-medium text-gray-700 mb-2">New Name</label>
+        <input 
+          v-model="newName" 
+          type="text" 
+          class="input w-full" 
+          placeholder="Enter new name"
+          @keyup.enter="renameSheet"
+        />
+      </div>
+
+      <template #footer>
+        <div class="flex justify-center space-x-3">
+          <button @click="showRenameModal = false" class="btn-secondary" :disabled="isRenaming">
+            Cancel
+          </button>
+          <button @click="renameSheet" class="btn-primary" :disabled="isRenaming || !newName.trim()">
+            <span v-if="isRenaming">Renaming...</span>
+            <span v-else>Rename</span>
           </button>
         </div>
       </template>

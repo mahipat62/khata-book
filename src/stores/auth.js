@@ -5,14 +5,19 @@ import { GOOGLE_CONFIG } from '@/config/google'
 const STORAGE_KEYS = {
   ACCESS_TOKEN: 'dhanvika_access_token',
   TOKEN_EXPIRY: 'dhanvika_token_expiry',
-  USER: 'dhanvika_user'
+  USER: 'dhanvika_user',
+  SESSION_START: 'dhanvika_session_start'
 }
+
+// Session validity in milliseconds (7 days)
+const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000
 
 export const useAuthStore = defineStore('auth', () => {
   // State
   const user = ref(null)
   const accessToken = ref(null)
   const tokenExpiry = ref(null)
+  const sessionStart = ref(null)
   const isLoading = ref(false)
   const error = ref(null)
   const tokenClient = ref(null)
@@ -20,7 +25,7 @@ export const useAuthStore = defineStore('auth', () => {
   const gisInited = ref(false)
 
   // Computed
-  const isAuthenticated = computed(() => !!accessToken.value && !isTokenExpired())
+  const isAuthenticated = computed(() => !!accessToken.value && !isTokenExpired() && !isSessionExpired())
   const isReady = computed(() => gapiInited.value && gisInited.value)
 
   // Check if token is expired
@@ -28,6 +33,12 @@ export const useAuthStore = defineStore('auth', () => {
     if (!tokenExpiry.value) return true
     // Add 5 minute buffer before expiry
     return Date.now() > (tokenExpiry.value - 5 * 60 * 1000)
+  }
+
+  // Check if session has expired (7 days)
+  function isSessionExpired() {
+    if (!sessionStart.value) return false // New session, not expired
+    return Date.now() > (sessionStart.value + SESSION_DURATION)
   }
 
   // Initialize Google API
@@ -77,9 +88,21 @@ export const useAuthStore = defineStore('auth', () => {
       const storedToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN)
       const storedExpiry = localStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRY)
       const storedUser = localStorage.getItem(STORAGE_KEYS.USER)
+      const storedSessionStart = localStorage.getItem(STORAGE_KEYS.SESSION_START)
       
       if (storedToken && storedUser && storedExpiry) {
         const expiryTime = parseInt(storedExpiry, 10)
+        const sessionStartTime = storedSessionStart ? parseInt(storedSessionStart, 10) : Date.now()
+        
+        // Check if session has expired (7 days limit)
+        if (Date.now() > sessionStartTime + SESSION_DURATION) {
+          console.log('[Auth] Session expired (7 days), clearing storage')
+          clearAuthStorage()
+          resolve()
+          return
+        }
+        
+        sessionStart.value = sessionStartTime
         
         // Check if token is still valid (with 5 min buffer)
         if (Date.now() < expiryTime - 5 * 60 * 1000) {
@@ -97,6 +120,14 @@ export const useAuthStore = defineStore('auth', () => {
       resolve()
     }
   }
+  
+  // Clear authentication storage
+  function clearAuthStorage() {
+    localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN)
+    localStorage.removeItem(STORAGE_KEYS.TOKEN_EXPIRY)
+    localStorage.removeItem(STORAGE_KEYS.USER)
+    localStorage.removeItem(STORAGE_KEYS.SESSION_START)
+  }
 
   // Handle token response from Google
   async function handleTokenResponse(response) {
@@ -112,6 +143,12 @@ export const useAuthStore = defineStore('auth', () => {
 
     accessToken.value = response.access_token
     tokenExpiry.value = expiryTime
+    
+    // Set session start time if not already set (new login)
+    if (!sessionStart.value) {
+      sessionStart.value = Date.now()
+      localStorage.setItem(STORAGE_KEYS.SESSION_START, sessionStart.value.toString())
+    }
     
     // Store in localStorage for persistence across browser sessions
     localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.access_token)
@@ -190,12 +227,11 @@ export const useAuthStore = defineStore('auth', () => {
     
     accessToken.value = null
     tokenExpiry.value = null
+    sessionStart.value = null
     user.value = null
     
     // Clear localStorage
-    localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN)
-    localStorage.removeItem(STORAGE_KEYS.TOKEN_EXPIRY)
-    localStorage.removeItem(STORAGE_KEYS.USER)
+    clearAuthStorage()
     
     if (gapi.client) {
       gapi.client.setToken(null)

@@ -7,6 +7,7 @@ import DashboardView from '@/views/DashboardView.vue'
 import SheetsView from '@/views/SheetsView.vue'
 import SheetDetailView from '@/views/SheetDetailView.vue'
 import SettingsView from '@/views/SettingsView.vue'
+import AnalyticsView from '@/views/AnalyticsView.vue'
 
 const routes = [
   {
@@ -35,6 +36,12 @@ const routes = [
     path: '/sheet/:id',
     name: 'SheetDetail',
     component: SheetDetailView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/analytics',
+    name: 'Analytics',
+    component: AnalyticsView,
     meta: { requiresAuth: true }
   },
   {
