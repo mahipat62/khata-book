@@ -98,7 +98,7 @@ export const APP_CONFIG = {
   APP_NAME: 'Dhanvika Vyavasāya',
   APP_NAME_HINDI: 'धनविका व्यवसाय',
   TAGLINE: 'Smart Business Management',
-  VERSION: '2.1.0',
+  VERSION: '2.1.1',
   ITEMS_PER_PAGE: 25,
   DATE_FORMAT: 'YYYY-MM-DD',
   CURRENCY: '₹',

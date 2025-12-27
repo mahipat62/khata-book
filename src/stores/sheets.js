@@ -41,19 +41,27 @@ export const useSheetsStore = defineStore('sheets', () => {
     error.value = null
 
     try {
-      // Create spreadsheet
+      // Create spreadsheet with two sheets: Records and _Settings (hidden)
       const response = await gapi.client.sheets.spreadsheets.create({
         properties: {
           title: `Khata - ${name}`
         },
-        sheets: [{
-          properties: {
-            title: 'Records',
-            gridProperties: {
-              frozenRowCount: 1
+        sheets: [
+          {
+            properties: {
+              title: 'Records',
+              gridProperties: {
+                frozenRowCount: 1
+              }
+            }
+          },
+          {
+            properties: {
+              title: '_Settings',
+              hidden: true
             }
           }
-        }]
+        ]
       })
 
       const spreadsheetId = response.result.spreadsheetId
@@ -105,6 +113,9 @@ export const useSheetsStore = defineStore('sheets', () => {
         }
       })
 
+      // Save column configuration to _Settings sheet
+      await saveColumnConfig(spreadsheetId, columns)
+
       // Refresh sheets list
       await fetchSheets()
 
@@ -118,9 +129,45 @@ export const useSheetsStore = defineStore('sheets', () => {
     }
   }
 
+  // Save column configuration to the hidden _Settings sheet
+  async function saveColumnConfig(spreadsheetId, columns) {
+    try {
+      const configData = JSON.stringify(columns)
+      await gapi.client.sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: '_Settings!A1',
+        valueInputOption: 'RAW',
+        resource: {
+          values: [['COLUMN_CONFIG', configData]]
+        }
+      })
+    } catch (err) {
+      console.error('Failed to save column config:', err)
+    }
+  }
+
   // Get column configuration from the sheet's header row
   async function getColumnConfig(spreadsheetId) {
     try {
+      // First, try to read from _Settings sheet
+      try {
+        const settingsResponse = await gapi.client.sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: '_Settings!A1:B1'
+        })
+        
+        const settingsData = settingsResponse.result.values?.[0]
+        if (settingsData && settingsData[0] === 'COLUMN_CONFIG' && settingsData[1]) {
+          const savedColumns = JSON.parse(settingsData[1])
+          if (Array.isArray(savedColumns) && savedColumns.length > 0) {
+            return savedColumns
+          }
+        }
+      } catch (settingsErr) {
+        // _Settings sheet might not exist for older sheets, continue with inference
+        console.log('No _Settings sheet found, inferring columns from headers')
+      }
+
       // Read the header row to get column names
       const headerResponse = await gapi.client.sheets.spreadsheets.values.get({
         spreadsheetId,
@@ -157,6 +204,7 @@ export const useSheetsStore = defineStore('sheets', () => {
           type = 'number'
         } else if (headerLower.includes('paid') || headerLower.includes('active') || 
                    headerLower.includes('completed') || headerLower.includes('done') ||
+                   headerLower.includes('received') || headerLower.includes('pending') ||
                    headerLower.includes('status') || headerLower === 'is' || 
                    headerLower.startsWith('is_')) {
           type = 'boolean'

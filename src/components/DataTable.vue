@@ -36,7 +36,11 @@ function formatValue(value, column) {
   }
   
   if (column.type === 'boolean') {
-    return value === 'Yes' || value === true || value === 'TRUE' ? '✓ Yes' : '✕ No'
+    // Check for custom boolean labels
+    const yesLabel = column.booleanLabels?.yes || 'Yes'
+    const noLabel = column.booleanLabels?.no || 'No'
+    const isPositive = value === yesLabel || value === 'Yes' || value === true || value === 'TRUE'
+    return isPositive ? `✓ ${yesLabel}` : `✕ ${noLabel}`
   }
   
   if (column.type === 'number') {
@@ -47,9 +51,11 @@ function formatValue(value, column) {
   return value
 }
 
-function getBooleanClass(value) {
-  const isYes = value === 'Yes' || value === true || value === 'TRUE'
-  return isYes 
+function getBooleanClass(value, column) {
+  // Check for custom boolean labels
+  const yesLabel = column?.booleanLabels?.yes || 'Yes'
+  const isPositive = value === yesLabel || value === 'Yes' || value === true || value === 'TRUE'
+  return isPositive 
     ? 'bg-green-100 text-green-800' 
     : 'bg-red-100 text-red-800'
 }
@@ -125,7 +131,7 @@ function getBooleanClass(value) {
               v-if="column.type === 'boolean'"
               :class="[
                 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium',
-                getBooleanClass(row[column.name])
+                getBooleanClass(row[column.name], column)
               ]"
             >
               {{ formatValue(row[column.name], column) }}

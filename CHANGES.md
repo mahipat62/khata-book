@@ -4,6 +4,26 @@ All notable changes to Dhanvika Vyavasāya will be documented in this file.
 
 ---
 
+## [2.1.1] - 2024-12-27
+
+### 🐛 Bug Fixes
+
+- **Fixed Dropdown Field**: Select/dropdown type fields now work correctly in custom columns (was showing as text field)
+- **Column Options Saved**: Dropdown options are now properly saved and restored when reopening sheets
+
+### ✨ New Features
+
+- **Editable Columns**: Can now edit existing column names, types, and settings by clicking the edit button
+- **Custom Boolean Labels**: Boolean/toggle fields can now use custom labels instead of Yes/No (e.g., "Received/Pending", "Paid/Unpaid", "Done/Not Done")
+- **Persistent Column Config**: Column configurations (including dropdown options and custom labels) are now saved to a hidden `_Settings` sheet
+
+### 🎨 UI Improvements
+
+- **Column Edit Mode**: Inline editing for existing columns with options to change name, type, required status
+- **Boolean Label Preview**: Shows custom labels in column list (e.g., "Received / Pending")
+
+---
+
 ## [2.1.0] - 2024-12-25
 
 ### 🎨 UI/UX Improvements

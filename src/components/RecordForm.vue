@@ -49,7 +49,8 @@ function initFormData() {
           data[col.name] = ''
           break
         case 'boolean':
-          data[col.name] = 'No'
+          // Use custom "No" label or default to 'No'
+          data[col.name] = col.booleanLabels?.no || 'No'
           break
         case 'select':
           data[col.name] = col.options?.[0] || ''
@@ -137,25 +138,25 @@ function handleCancel() {
         :class="['input', errors[column.name] ? 'border-red-500 focus:ring-red-500' : '']"
       />
 
-      <!-- Boolean (Yes/No) -->
+      <!-- Boolean (Yes/No or Custom Labels) -->
       <div v-else-if="column.type === 'boolean'" class="flex items-center space-x-4">
         <label class="flex items-center space-x-2 cursor-pointer">
           <input
             type="radio"
             v-model="formData[column.name]"
-            value="Yes"
+            :value="column.booleanLabels?.yes || 'Yes'"
             class="w-4 h-4 text-primary-600 focus:ring-primary-500"
           />
-          <span class="text-sm text-gray-700">Yes</span>
+          <span class="text-sm text-gray-700">{{ column.booleanLabels?.yes || 'Yes' }}</span>
         </label>
         <label class="flex items-center space-x-2 cursor-pointer">
           <input
             type="radio"
             v-model="formData[column.name]"
-            value="No"
+            :value="column.booleanLabels?.no || 'No'"
             class="w-4 h-4 text-primary-600 focus:ring-primary-500"
           />
-          <span class="text-sm text-gray-700">No</span>
+          <span class="text-sm text-gray-700">{{ column.booleanLabels?.no || 'No' }}</span>
         </label>
       </div>
 
