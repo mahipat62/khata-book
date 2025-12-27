@@ -8,6 +8,7 @@ import RecordForm from '@/components/RecordForm.vue'
 import FilterPanel from '@/components/FilterPanel.vue'
 import SummaryCards from '@/components/SummaryCards.vue'
 import Modal from '@/components/Modal.vue'
+import ShareSheetModal from '@/components/ShareSheetModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,6 +19,7 @@ const isLoading = ref(true)
 const showAddModal = ref(false)
 const showEditModal = ref(false)
 const showDeleteModal = ref(false)
+const showShareModal = ref(false)
 const selectedRecord = ref(null)
 const isSaving = ref(false)
 const showFilters = ref(false)
@@ -205,6 +207,13 @@ function openInGoogleSheets() {
     window.open(sheetsStore.currentSheet.url, '_blank')
   }
 }
+
+function handleShareSuccess(result) {
+  if (result.success) {
+    const accessText = result.role === 'writer' ? 'edit' : 'view'
+    toastStore.success(`Sheet shared with ${result.email} (${accessText} access)`)
+  }
+}
 </script>
 
 <template>
@@ -239,6 +248,17 @@ function openInGoogleSheets() {
         </div>
 
         <div class="flex items-center space-x-3">
+          <!-- Share Button -->
+          <button
+            @click="showShareModal = true"
+            class="btn-secondary flex items-center space-x-2"
+            title="Share sheet"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+            </svg>
+            <span class="hidden sm:inline">Share</span>
+          </button>
           <button
             @click="openInGoogleSheets"
             class="btn-secondary flex items-center space-x-2"
@@ -357,6 +377,15 @@ function openInGoogleSheets() {
           </div>
         </template>
       </Modal>
+
+      <!-- Share Sheet Modal -->
+      <ShareSheetModal 
+        :show="showShareModal"
+        :sheetId="sheetId"
+        :sheetName="sheetsStore.currentSheet?.name"
+        @close="showShareModal = false"
+        @share="handleShareSuccess"
+      />
     </template>
   </div>
 </template>
