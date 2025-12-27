@@ -1,6 +1,9 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { GOOGLE_CONFIG } from '@/config/google'
+
+// Auto backup settings storage key
+const AUTO_BACKUP_KEY = 'dhanvika_auto_backup_settings'
 
 export const useBackupStore = defineStore('backup', () => {
   // State
@@ -8,6 +11,110 @@ export const useBackupStore = defineStore('backup', () => {
   const error = ref(null)
   const lastBackup = ref(null)
   const backupFileId = ref(null)
+  
+  // Auto backup state
+  const autoBackupSettings = ref({
+    enabled: false,
+    frequency: 'weekly', // 'daily', 'weekly', 'monthly'
+    lastAutoBackup: null
+  })
+
+  // Load auto backup settings from localStorage
+  function loadAutoBackupSettings() {
+    try {
+      const saved = localStorage.getItem(AUTO_BACKUP_KEY)
+      if (saved) {
+        autoBackupSettings.value = JSON.parse(saved)
+      }
+    } catch (err) {
+      console.error('Failed to load auto backup settings:', err)
+    }
+  }
+
+  // Save auto backup settings to localStorage
+  function saveAutoBackupSettings() {
+    try {
+      localStorage.setItem(AUTO_BACKUP_KEY, JSON.stringify(autoBackupSettings.value))
+    } catch (err) {
+      console.error('Failed to save auto backup settings:', err)
+    }
+  }
+
+  // Update auto backup settings
+  function updateAutoBackupSettings(settings) {
+    autoBackupSettings.value = { ...autoBackupSettings.value, ...settings }
+    saveAutoBackupSettings()
+  }
+
+  // Check if auto backup is needed based on frequency
+  function isAutoBackupNeeded() {
+    if (!autoBackupSettings.value.enabled) return false
+    
+    const lastBackupTime = autoBackupSettings.value.lastAutoBackup
+    if (!lastBackupTime) return true
+    
+    const now = new Date()
+    const lastBackupDate = new Date(lastBackupTime)
+    const diffMs = now - lastBackupDate
+    const diffDays = diffMs / (1000 * 60 * 60 * 24)
+    
+    switch (autoBackupSettings.value.frequency) {
+      case 'daily':
+        return diffDays >= 1
+      case 'weekly':
+        return diffDays >= 7
+      case 'monthly':
+        return diffDays >= 30
+      default:
+        return false
+    }
+  }
+
+  // Perform auto backup if needed (called on app mount)
+  async function performAutoBackupIfNeeded(data) {
+    loadAutoBackupSettings()
+    
+    if (!isAutoBackupNeeded()) {
+      console.log('Auto backup not needed yet')
+      return { performed: false, reason: 'not_due' }
+    }
+    
+    try {
+      console.log('Performing scheduled auto backup...')
+      await saveToGoogleDrive(data)
+      autoBackupSettings.value.lastAutoBackup = new Date().toISOString()
+      saveAutoBackupSettings()
+      console.log('Auto backup completed successfully')
+      return { performed: true, success: true }
+    } catch (err) {
+      console.error('Auto backup failed:', err)
+      return { performed: true, success: false, error: err.message }
+    }
+  }
+
+  // Get next backup date based on frequency
+  const nextBackupDate = computed(() => {
+    if (!autoBackupSettings.value.enabled || !autoBackupSettings.value.lastAutoBackup) {
+      return null
+    }
+    
+    const lastBackupDate = new Date(autoBackupSettings.value.lastAutoBackup)
+    const nextDate = new Date(lastBackupDate)
+    
+    switch (autoBackupSettings.value.frequency) {
+      case 'daily':
+        nextDate.setDate(nextDate.getDate() + 1)
+        break
+      case 'weekly':
+        nextDate.setDate(nextDate.getDate() + 7)
+        break
+      case 'monthly':
+        nextDate.setMonth(nextDate.getMonth() + 1)
+        break
+    }
+    
+    return nextDate
+  })
 
   // Get or create app data folder in Google Drive
   async function getOrCreateAppFolder() {
@@ -199,20 +306,53 @@ export const useBackupStore = defineStore('backup', () => {
     })
   }
 
-  // List all spreadsheets from Google Drive (for import)
-  async function listDriveSpreadsheets() {
+  // List all spreadsheets from Google Drive (for import) - includes shared sheets
+  async function listDriveSpreadsheets(includeShared = true) {
     isLoading.value = true
     error.value = null
 
     try {
+      // Query for spreadsheets - owned OR shared with me
+      const query = includeShared
+        ? "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false"
+        : "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false and 'me' in owners"
+      
       const response = await gapi.client.drive.files.list({
-        q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
-        fields: 'files(id, name, createdTime, modifiedTime, webViewLink)',
+        q: query,
+        fields: 'files(id, name, createdTime, modifiedTime, webViewLink, owners, permissions, capabilities, shared, sharingUser)',
         orderBy: 'modifiedTime desc',
-        pageSize: 50
+        pageSize: 100
       })
 
-      return response.result.files || []
+      const files = response.result.files || []
+      
+      // Get current user email for ownership check
+      const userResponse = await gapi.client.oauth2?.userinfo?.get() || null
+      const currentUserEmail = userResponse?.result?.email?.toLowerCase() || ''
+      
+      // Enhance each file with permission info
+      const enhancedFiles = files.map(file => {
+        const isOwner = file.owners?.some(o => o.me) || false
+        
+        // Determine permission level
+        let permission = 'viewer'
+        if (isOwner) {
+          permission = 'owner'
+        } else if (file.capabilities?.canEdit) {
+          permission = 'editor'
+        } else if (file.capabilities?.canComment) {
+          permission = 'commenter'
+        }
+        
+        return {
+          ...file,
+          isOwner,
+          permission,
+          sharedBy: file.sharingUser?.displayName || null
+        }
+      })
+
+      return enhancedFiles
     } catch (err) {
       error.value = err.message || 'Failed to list spreadsheets'
       console.error('List spreadsheets error:', err)
@@ -222,8 +362,8 @@ export const useBackupStore = defineStore('backup', () => {
     }
   }
 
-  // Import sheet from Google Drive by ID
-  async function importSheetFromDrive(spreadsheetId) {
+  // Import sheet from Google Drive by ID (with permission info for field mapping)
+  async function importSheetFromDrive(spreadsheetId, sheetPermission = 'owner') {
     isLoading.value = true
     error.value = null
 
@@ -236,8 +376,16 @@ export const useBackupStore = defineStore('backup', () => {
 
       const sheetName = metaResponse.result.properties.title
 
-      // Get first sheet data
-      const firstSheetTitle = metaResponse.result.sheets[0]?.properties.title || 'Sheet1'
+      // Get all sheet tabs
+      const sheetTabs = metaResponse.result.sheets?.map(s => ({
+        title: s.properties.title,
+        sheetId: s.properties.sheetId,
+        index: s.properties.index
+      })) || []
+
+      // Get first sheet data (excluding _Settings if exists)
+      const firstDataSheet = sheetTabs.find(s => s.title !== '_Settings') || sheetTabs[0]
+      const firstSheetTitle = firstDataSheet?.title || 'Sheet1'
       
       const dataResponse = await gapi.client.sheets.spreadsheets.values.get({
         spreadsheetId,
@@ -247,7 +395,14 @@ export const useBackupStore = defineStore('backup', () => {
       const values = dataResponse.result.values || []
       
       if (values.length === 0) {
-        return { name: sheetName, columns: [], data: [] }
+        return { 
+          name: sheetName, 
+          columns: [], 
+          data: [],
+          permission: sheetPermission,
+          canEdit: sheetPermission === 'owner' || sheetPermission === 'editor',
+          sheetTabs
+        }
       }
 
       const headers = values[0]
@@ -263,19 +418,47 @@ export const useBackupStore = defineStore('backup', () => {
       const columns = headers.map(header => {
         const headerLower = header.toLowerCase()
         let type = 'text'
+        let suggestedMapping = null
         
-        if (headerLower.includes('date') || headerLower.includes('time')) {
+        // Date detection
+        if (headerLower.includes('date') || headerLower.includes('time') || 
+            headerLower === 'created' || headerLower === 'updated') {
           type = 'date'
-        } else if (headerLower.includes('amount') || headerLower.includes('price') || 
-                   headerLower.includes('cost') || headerLower.includes('total') ||
-                   headerLower.includes('number') || headerLower.includes('quantity')) {
+          suggestedMapping = 'date'
+        } 
+        // Amount/Number detection
+        else if (headerLower.includes('amount') || headerLower.includes('price') || 
+                 headerLower.includes('cost') || headerLower.includes('total') ||
+                 headerLower.includes('number') || headerLower.includes('quantity') ||
+                 headerLower.includes('credit') || headerLower.includes('debit')) {
           type = 'number'
-        } else if (headerLower.includes('paid') || headerLower.includes('active') || 
-                   headerLower.includes('completed') || headerLower.includes('done')) {
+          if (headerLower.includes('credit')) suggestedMapping = 'credit'
+          else if (headerLower.includes('debit')) suggestedMapping = 'debit'
+          else suggestedMapping = 'amount'
+        } 
+        // Boolean detection
+        else if (headerLower.includes('paid') || headerLower.includes('active') || 
+                 headerLower.includes('completed') || headerLower.includes('done') ||
+                 headerLower.includes('status') || headerLower.includes('received')) {
           type = 'boolean'
+          suggestedMapping = 'status'
+        }
+        // Name/Description detection
+        else if (headerLower.includes('name') || headerLower.includes('party') ||
+                 headerLower.includes('customer') || headerLower.includes('vendor')) {
+          suggestedMapping = 'party'
+        }
+        else if (headerLower.includes('description') || headerLower.includes('detail') ||
+                 headerLower.includes('remark') || headerLower.includes('note')) {
+          suggestedMapping = 'description'
         }
 
-        return { name: header, type, required: false }
+        return { 
+          name: header, 
+          type, 
+          required: false,
+          suggestedMapping
+        }
       })
 
       return {
@@ -283,7 +466,11 @@ export const useBackupStore = defineStore('backup', () => {
         name: sheetName,
         columns,
         data,
-        url: metaResponse.result.spreadsheetUrl
+        url: metaResponse.result.spreadsheetUrl,
+        permission: sheetPermission,
+        canEdit: sheetPermission === 'owner' || sheetPermission === 'editor',
+        sheetTabs,
+        recordCount: data.length
       }
     } catch (err) {
       error.value = err.message || 'Failed to import sheet'
@@ -311,6 +498,8 @@ export const useBackupStore = defineStore('backup', () => {
     error,
     lastBackup,
     backupFileId,
+    autoBackupSettings,
+    nextBackupDate,
     // Actions
     saveToGoogleDrive,
     loadFromGoogleDrive,
@@ -319,6 +508,11 @@ export const useBackupStore = defineStore('backup', () => {
     listDriveSpreadsheets,
     importSheetFromDrive,
     checkBackupStatus,
-    getOrCreateAppFolder
+    getOrCreateAppFolder,
+    // Auto backup
+    loadAutoBackupSettings,
+    updateAutoBackupSettings,
+    isAutoBackupNeeded,
+    performAutoBackupIfNeeded
   }
 })

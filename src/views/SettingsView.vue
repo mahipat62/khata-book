@@ -1,10 +1,11 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSheetsStore } from '@/stores/sheets'
 import { useToastStore } from '@/stores/toast'
 import { useBackupStore } from '@/stores/backup'
 import { APP_CONFIG, GOOGLE_CONFIG } from '@/config/google'
+import FieldMappingModal from '@/components/FieldMappingModal.vue'
 
 const authStore = useAuthStore()
 const sheetsStore = useSheetsStore()
@@ -14,13 +15,43 @@ const backupStore = useBackupStore()
 const showApiInfo = ref(false)
 const showImportModal = ref(false)
 const showDriveImportModal = ref(false)
+const showFieldMappingModal = ref(false)
 const driveSheets = ref([])
+const selectedSheetForMapping = ref(null)
 const importFileInput = ref(null)
 const isBackingUp = ref(false)
 const isRestoring = ref(false)
 const backupStatus = ref(null)
+const showSharedSheetsOnly = ref(false)
+
+// Auto backup settings
+const autoBackupEnabled = computed({
+  get: () => backupStore.autoBackupSettings.enabled,
+  set: (val) => backupStore.updateAutoBackupSettings({ enabled: val })
+})
+
+const autoBackupFrequency = computed({
+  get: () => backupStore.autoBackupSettings.frequency,
+  set: (val) => backupStore.updateAutoBackupSettings({ frequency: val })
+})
+
+const lastAutoBackup = computed(() => {
+  const date = backupStore.autoBackupSettings.lastAutoBackup
+  if (!date) return 'Never'
+  return new Date(date).toLocaleString()
+})
+
+const nextBackupText = computed(() => {
+  if (!backupStore.autoBackupSettings.enabled) return 'Auto backup disabled'
+  const next = backupStore.nextBackupDate
+  if (!next) return 'On next visit'
+  return next.toLocaleString()
+})
 
 onMounted(async () => {
+  // Load auto backup settings
+  backupStore.loadAutoBackupSettings()
+  
   // Check backup status on mount
   try {
     backupStatus.value = await backupStore.checkBackupStatus()
@@ -160,12 +191,151 @@ async function handleFileImport(event) {
 async function openDriveImport() {
   showDriveImportModal.value = true
   try {
-    driveSheets.value = await backupStore.listDriveSpreadsheets()
+    driveSheets.value = await backupStore.listDriveSpreadsheets(true) // Include shared sheets
   } catch (error) {
     toastStore.error('Failed to list Google Drive sheets')
   }
 }
 
+// Filter sheets based on ownership
+const filteredDriveSheets = computed(() => {
+  if (showSharedSheetsOnly.value) {
+    return driveSheets.value.filter(s => !s.isOwner)
+  }
+  return driveSheets.value
+})
+
+// Open field mapping for a sheet
+async function openFieldMapping(sheet) {
+  try {
+    const sheetData = await backupStore.importSheetFromDrive(sheet.id, sheet.permission)
+    selectedSheetForMapping.value = sheetData
+    showFieldMappingModal.value = true
+  } catch (error) {
+    toastStore.error('Failed to load sheet for mapping: ' + error.message)
+  }
+}
+
+// Handle field mapping confirmation
+async function handleFieldMappingConfirm(mappingConfig) {
+  try {
+    if (mappingConfig.mode === 'copy') {
+      // Create a new sheet with mapped data
+      await createMappedSheet(mappingConfig)
+    } else {
+      // Link to original sheet
+      await linkOriginalSheet(mappingConfig)
+    }
+    showFieldMappingModal.value = false
+    showDriveImportModal.value = false
+    selectedSheetForMapping.value = null
+  } catch (error) {
+    toastStore.error('Failed to import sheet: ' + error.message)
+  }
+}
+
+// Create new sheet with mapped columns
+async function createMappedSheet(config) {
+  const { sheetName, mappings, sourceColumns, originalId } = config
+  const originalData = selectedSheetForMapping.value
+  
+  // Build new columns based on mappings
+  const standardFieldLabels = {
+    date: 'Date',
+    party: 'Party Name',
+    description: 'Description',
+    credit: 'Credit',
+    debit: 'Debit',
+    status: 'Status',
+    notes: 'Notes'
+  }
+  
+  // Create columns for mapped fields
+  const newColumns = []
+  const columnMapping = {} // sourceColumn -> newColumnName
+  
+  Object.entries(mappings).forEach(([sourceCol, fieldKey]) => {
+    const label = standardFieldLabels[fieldKey] || sourceCol
+    const colType = sourceColumns.find(c => c.name === sourceCol)?.type || 'text'
+    newColumns.push({
+      name: label,
+      type: colType,
+      required: fieldKey === 'date'
+    })
+    columnMapping[sourceCol] = label
+  })
+  
+  // Add unmapped columns at the end
+  sourceColumns.forEach(col => {
+    if (!mappings[col.name]) {
+      newColumns.push({
+        name: col.name,
+        type: col.type,
+        required: false
+      })
+      columnMapping[col.name] = col.name
+    }
+  })
+  
+  // Transform data
+  const transformedData = originalData.data.map(row => {
+    const newRow = { _rowIndex: row._rowIndex }
+    Object.entries(columnMapping).forEach(([src, dest]) => {
+      newRow[dest] = row[src] || ''
+    })
+    return newRow
+  })
+  
+  // Create new sheet
+  const newSheet = await sheetsStore.createSheet(sheetName, newColumns)
+  
+  // Add data to the new sheet
+  if (transformedData.length > 0 && newSheet?.id) {
+    await addDataToSheet(newSheet.id, transformedData, newColumns)
+  }
+  
+  toastStore.success(`Sheet "${sheetName}" created with ${transformedData.length} records!`)
+}
+
+// Add data to a sheet in batches
+async function addDataToSheet(sheetId, data, columns) {
+  const headers = columns.map(c => c.name)
+  const values = data.map(row => headers.map(h => row[h] || ''))
+  
+  // Update values (skip header row - row 1, start from row 2)
+  if (values.length > 0) {
+    await gapi.client.sheets.spreadsheets.values.update({
+      spreadsheetId: sheetId,
+      range: `Sheet1!A2:${String.fromCharCode(65 + headers.length - 1)}${values.length + 1}`,
+      valueInputOption: 'USER_ENTERED',
+      resource: { values }
+    })
+  }
+}
+
+// Link to original sheet (view only or edit)
+async function linkOriginalSheet(config) {
+  const originalData = selectedSheetForMapping.value
+  
+  // Add to sheets list
+  const existing = sheetsStore.sheets.find(s => s.id === originalData.id)
+  if (!existing) {
+    sheetsStore.sheets.push({
+      id: originalData.id,
+      name: originalData.name,
+      webViewLink: originalData.url,
+      modifiedTime: new Date().toISOString(),
+      isLinked: true,
+      canEdit: originalData.canEdit,
+      permission: originalData.permission,
+      fieldMappings: config.mappings
+    })
+  }
+  
+  toastStore.success(`Sheet "${originalData.name}" linked successfully! (${originalData.permission})`)
+}
+
+// Legacy function for quick import without mapping
 async function importFromDriveSheet(sheetId) {
   try {
     const sheetData = await backupStore.importSheetFromDrive(sheetId)
@@ -288,6 +458,54 @@ async function importFromDriveSheet(sheetId) {
           </svg>
           <span>{{ isRestoring ? 'Restoring...' : 'Restore from Drive' }}</span>
         </button>
+      </div>
+
+      <!-- Auto Backup Settings -->
+      <div class="mt-6 pt-4 border-t border-gray-200">
+        <h3 class="text-sm font-semibold text-gray-700 mb-3">🔄 Auto Backup</h3>
+        
+        <div class="space-y-4">
+          <!-- Enable/Disable Toggle -->
+          <div class="flex items-center justify-between">
+            <div>
+              <label class="text-sm text-gray-700">Enable Auto Backup</label>
+              <p class="text-xs text-gray-500">Automatically backup when you visit the app</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input 
+                type="checkbox" 
+                v-model="autoBackupEnabled"
+                class="sr-only peer"
+              />
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+            </label>
+          </div>
+
+          <!-- Frequency Selection -->
+          <div v-if="autoBackupEnabled" class="flex items-center justify-between">
+            <label class="text-sm text-gray-700">Backup Frequency</label>
+            <select 
+              v-model="autoBackupFrequency"
+              class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            >
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+
+          <!-- Status Info -->
+          <div v-if="autoBackupEnabled" class="bg-gray-50 rounded-lg p-3 text-sm">
+            <div class="flex justify-between text-gray-600">
+              <span>Last auto backup:</span>
+              <span class="font-medium">{{ lastAutoBackup }}</span>
+            </div>
+            <div class="flex justify-between text-gray-600 mt-1">
+              <span>Next scheduled:</span>
+              <span class="font-medium text-primary-600">{{ nextBackupText }}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -456,12 +674,32 @@ async function importFromDriveSheet(sheetId) {
     <div v-if="showDriveImportModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
         <div class="flex items-center justify-between p-4 border-b">
-          <h3 class="text-lg font-semibold text-gray-800">Import Sheet from Google Drive</h3>
+          <div>
+            <h3 class="text-lg font-semibold text-gray-800">Import Sheet from Google Drive</h3>
+            <p class="text-xs text-gray-500 mt-1">Import your own sheets or shared sheets from others</p>
+          </div>
           <button @click="showDriveImportModal = false" class="p-2 hover:bg-gray-100 rounded-lg">
             <svg class="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
+        </div>
+
+        <!-- Filter Options -->
+        <div class="px-4 py-3 border-b bg-gray-50">
+          <div class="flex items-center space-x-4">
+            <label class="flex items-center space-x-2 cursor-pointer">
+              <input 
+                type="checkbox" 
+                v-model="showSharedSheetsOnly"
+                class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+              />
+              <span class="text-sm text-gray-700">Show shared with me only</span>
+            </label>
+            <span class="text-xs text-gray-500">
+              {{ filteredDriveSheets.length }} of {{ driveSheets.length }} sheets
+            </span>
+          </div>
         </div>
         
         <div class="flex-1 overflow-y-auto p-4">
@@ -473,16 +711,17 @@ async function importFromDriveSheet(sheetId) {
             <span class="ml-2 text-gray-600">Loading sheets...</span>
           </div>
 
-          <div v-else-if="driveSheets.length === 0" class="text-center py-12 text-gray-500">
+          <div v-else-if="filteredDriveSheets.length === 0" class="text-center py-12 text-gray-500">
             <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            <p>No spreadsheets found in your Google Drive</p>
+            <p v-if="showSharedSheetsOnly">No shared spreadsheets found</p>
+            <p v-else>No spreadsheets found in your Google Drive</p>
           </div>
 
           <div v-else class="space-y-2">
             <div 
-              v-for="sheet in driveSheets" 
+              v-for="sheet in filteredDriveSheets" 
               :key="sheet.id"
               class="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors"
             >
@@ -492,22 +731,57 @@ async function importFromDriveSheet(sheetId) {
                   <path d="M7 7h2v2H7zm0 4h2v2H7zm0 4h2v2H7zm4-8h6v2h-6zm0 4h6v2h-6zm0 4h6v2h-6z"/>
                 </svg>
                 <div class="min-w-0 flex-1">
-                  <p class="font-medium text-gray-800 truncate">{{ sheet.name }}</p>
+                  <div class="flex items-center space-x-2">
+                    <p class="font-medium text-gray-800 truncate">{{ sheet.name }}</p>
+                    <!-- Permission Badge -->
+                    <span 
+                      class="px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0"
+                      :class="{
+                        'bg-green-100 text-green-700': sheet.permission === 'owner',
+                        'bg-blue-100 text-blue-700': sheet.permission === 'editor',
+                        'bg-yellow-100 text-yellow-700': sheet.permission === 'commenter',
+                        'bg-gray-100 text-gray-600': sheet.permission === 'viewer'
+                      }"
+                    >
+                      {{ sheet.permission === 'owner' ? '👑 Owner' : 
+                         sheet.permission === 'editor' ? '✏️ Edit' : 
+                         sheet.permission === 'commenter' ? '💬 Comment' : '👁️ View' }}
+                    </span>
+                  </div>
                   <p class="text-xs text-gray-500">
                     Modified: {{ new Date(sheet.modifiedTime).toLocaleDateString() }}
+                    <span v-if="sheet.sharedBy" class="ml-2">• Shared by {{ sheet.sharedBy }}</span>
                   </p>
                 </div>
               </div>
-              <button 
-                @click="importFromDriveSheet(sheet.id)"
-                class="btn-primary text-sm px-3 py-1.5 flex-shrink-0"
-              >
-                Import
-              </button>
+              <div class="flex items-center space-x-2 flex-shrink-0">
+                <button 
+                  @click="openFieldMapping(sheet)"
+                  class="btn-secondary text-sm px-3 py-1.5"
+                  title="Map fields before importing"
+                >
+                  Map Fields
+                </button>
+                <button 
+                  @click="importFromDriveSheet(sheet.id)"
+                  class="btn-primary text-sm px-3 py-1.5"
+                  title="Quick import without mapping"
+                >
+                  Quick Import
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Field Mapping Modal -->
+    <FieldMappingModal 
+      :show="showFieldMappingModal"
+      :sheetData="selectedSheetForMapping"
+      @close="showFieldMappingModal = false; selectedSheetForMapping = null"
+      @confirm="handleFieldMappingConfirm"
+    />
   </div>
 </template>
