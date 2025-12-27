@@ -2,6 +2,9 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { GOOGLE_CONFIG, DEFAULT_COLUMNS } from '@/config/google'
 
+// Local storage key for linked external sheets
+const LINKED_SHEETS_KEY = 'dhanvika_linked_sheets'
+
 export const useSheetsStore = defineStore('sheets', () => {
   // State
   const sheets = ref([])
@@ -10,23 +13,116 @@ export const useSheetsStore = defineStore('sheets', () => {
   const isLoading = ref(false)
   const error = ref(null)
   const syncStatus = ref('idle') // idle, syncing, synced, error
+  const linkedSheetIds = ref([]) // IDs of externally linked sheets
+
+  // Load linked sheet IDs from localStorage
+  function loadLinkedSheets() {
+    try {
+      const saved = localStorage.getItem(LINKED_SHEETS_KEY)
+      if (saved) {
+        linkedSheetIds.value = JSON.parse(saved)
+      }
+    } catch (err) {
+      console.error('Failed to load linked sheets:', err)
+    }
+  }
+
+  // Save linked sheet IDs to localStorage
+  function saveLinkedSheets() {
+    try {
+      localStorage.setItem(LINKED_SHEETS_KEY, JSON.stringify(linkedSheetIds.value))
+    } catch (err) {
+      console.error('Failed to save linked sheets:', err)
+    }
+  }
+
+  // Add a sheet to linked list
+  function addLinkedSheet(sheetId) {
+    if (!linkedSheetIds.value.includes(sheetId)) {
+      linkedSheetIds.value.push(sheetId)
+      saveLinkedSheets()
+    }
+  }
+
+  // Remove a sheet from linked list
+  function removeLinkedSheet(sheetId) {
+    linkedSheetIds.value = linkedSheetIds.value.filter(id => id !== sheetId)
+    saveLinkedSheets()
+  }
 
   // Computed
   const sheetCount = computed(() => sheets.value.length)
 
-  // Get all Khata spreadsheets from Drive
+  // Get all Khata spreadsheets from Drive (including shared ones)
   async function fetchSheets() {
     isLoading.value = true
     error.value = null
 
     try {
-      const response = await gapi.client.drive.files.list({
+      // Load linked sheets first
+      loadLinkedSheets()
+
+      // Query 1: Get all sheets with "Khata" in name (owned + shared)
+      const khataResponse = await gapi.client.drive.files.list({
         q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false and name contains 'Khata'",
-        fields: 'files(id, name, createdTime, modifiedTime, webViewLink)',
-        orderBy: 'modifiedTime desc'
+        fields: 'files(id, name, createdTime, modifiedTime, webViewLink, owners, capabilities, shared)',
+        orderBy: 'modifiedTime desc',
+        pageSize: 100
       })
 
-      sheets.value = response.result.files || []
+      // Query 2: Get sheets shared with me (that might not have "Khata" in name)
+      const sharedResponse = await gapi.client.drive.files.list({
+        q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false and sharedWithMe=true",
+        fields: 'files(id, name, createdTime, modifiedTime, webViewLink, owners, capabilities, shared, sharingUser)',
+        orderBy: 'modifiedTime desc',
+        pageSize: 50
+      })
+
+      // Query 3: Get any specifically linked sheets by ID
+      let linkedSheetsData = []
+      if (linkedSheetIds.value.length > 0) {
+        const linkedPromises = linkedSheetIds.value.map(async (id) => {
+          try {
+            const res = await gapi.client.drive.files.get({
+              fileId: id,
+              fields: 'id, name, createdTime, modifiedTime, webViewLink, owners, capabilities, shared'
+            })
+            return res.result
+          } catch (err) {
+            console.warn(`Could not fetch linked sheet ${id}:`, err)
+            return null
+          }
+        })
+        linkedSheetsData = (await Promise.all(linkedPromises)).filter(Boolean)
+      }
+
+      // Combine and deduplicate
+      const allFiles = [
+        ...(khataResponse.result.files || []),
+        ...(sharedResponse.result.files || []),
+        ...linkedSheetsData
+      ]
+
+      // Deduplicate by ID and enhance with metadata
+      const uniqueSheets = new Map()
+      allFiles.forEach(file => {
+        if (!uniqueSheets.has(file.id)) {
+          const isOwner = file.owners?.some(o => o.me) || false
+          const isLinked = linkedSheetIds.value.includes(file.id)
+          
+          uniqueSheets.set(file.id, {
+            ...file,
+            isOwner,
+            isShared: !isOwner,
+            isLinked,
+            canEdit: file.capabilities?.canEdit || isOwner,
+            sharedBy: file.sharingUser?.displayName || null
+          })
+        }
+      })
+
+      sheets.value = Array.from(uniqueSheets.values())
+        .sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime))
     } catch (err) {
       error.value = err.message || 'Failed to fetch sheets'
       console.error('Fetch sheets error:', err)
@@ -456,6 +552,7 @@ export const useSheetsStore = defineStore('sheets', () => {
     isLoading,
     error,
     syncStatus,
+    linkedSheetIds,
     // Computed
     sheetCount,
     // Actions
@@ -469,6 +566,8 @@ export const useSheetsStore = defineStore('sheets', () => {
     renameSheet,
     duplicateSheet,
     getColumnConfig,
+    addLinkedSheet,
+    removeLinkedSheet,
     clearState
   }
 })
